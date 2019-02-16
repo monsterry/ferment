@@ -3,7 +3,7 @@ Some wheezy templates.
 """
 
 docker = """\
-@require(cidr, interface, containers)
+@require(cidr, interface, containers, networks)
 domain ip {
     table nat {
         chain DOCKER;
@@ -18,6 +18,11 @@ domain ip {
         chain POSTROUTING {
             policy ACCEPT;
             saddr @cidr outerface ! @interface MASQUERADE;
+            @for network in networks:
+            @if network['IPAM']['Config']:
+            saddr @network['IPAM']['Config'][0]['Subnet'] outerface ! br-@network['Id'][:12] MASQUERADE;
+            @end
+            @end
         }
     }
     table filter {
@@ -34,6 +39,18 @@ domain ip {
                 outerface ! @interface ACCEPT;
                 outerface @interface ACCEPT;
             }
+            @for network in networks:
+            @(
+            bridgename = "br-" + network['Id'][:12]
+            )
+            outerface @bridgename {
+                jump DOCKER;
+                mod conntrack ctstate (RELATED ESTABLISHED) ACCEPT;
+            }
+            interface @bridgename {
+                outerface ! @bridgename ACCEPT;
+            }
+            @end
         }
         chain DOCKER-ISOLATION {
             jump RETURN;
@@ -42,13 +59,16 @@ domain ip {
 
     # container setup
     @for container in containers:
-    # @container['Id']
+    # @container['Name'] @container['Id']
     @(
-        networks = container['NetworkSettings']['Networks'].keys()
+        #ip_address = container['NetworkSettings']['IPAddress']
+	networks = container['NetworkSettings']['Networks'].keys()
         first_network = list(networks)[0]
         # TODO: Loop over each network instad just using the first network!
         ip_address = container['NetworkSettings']['Networks'][first_network]['IPAddress']
         port_bindings = container['HostConfig']['PortBindings']
+        bridgename = "br-" + container['NetworkSettings']['Networks'][first_network]['NetworkID'][:12]
+        
 
         # group into proto:port:(host:port)
         bindings = {}
@@ -81,7 +101,7 @@ domain ip {
             @for proto, ports in bindings.items():
             @for port, binds in ports.items():
             @for host_ip, host_port in binds:
-            @{ host_ip and "daddr %s/32 " % host_ip or '' }interface ! @interface protocol tcp dport @host_port DNAT to @ip_address:@port;
+            @{ host_ip and "daddr %s/32 " % host_ip or '' }interface ! @bridgename protocol tcp dport @host_port DNAT to @ip_address:@port;
             @end
             @end
             @end
@@ -90,8 +110,8 @@ domain ip {
     table filter {
         chain DOCKER {
             @for proto, ports in bindings.items():
-            daddr @ip_address/32 interface ! @interface outerface @interface protocol @proto {
-            @for port, binds in ports.items():
+            daddr @ip_address/32 interface ! @bridgename outerface @bridgename protocol @proto {
+            @for port, binds in ports.iteritems():
                 dport @port ACCEPT;
             @end
             }

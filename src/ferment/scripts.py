@@ -92,9 +92,16 @@ def docker_config(ctx):
 
     # get all containers
     containers = ctx.obj.client.containers()
-
     ctx.obj.containers = [
         ctx.obj.client.inspect_container(container['Id'])
         for container in containers
     ]
+
+    # get all networks
+    networks = ctx.obj.client.networks()
+    ctx.obj.networks = [
+        ctx.obj.client.inspect_network(network['Id'])
+        for network in networks
+    ]
+
     click.echo(ferm.get_config(ctx.obj))
