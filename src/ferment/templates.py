@@ -17,10 +17,15 @@ domain ip {
         }
         chain POSTROUTING {
             policy ACCEPT;
-            saddr @cidr outerface ! @interface MASQUERADE;
             @for network in networks:
+            @(
+               bridgename = "br-" + network['Id'][:12]
+               if network['Options']:
+                  if network['Options']["com.docker.network.bridge.name"]:
+                     bridgename =  network['Options']["com.docker.network.bridge.name"]
+            )
             @if network['IPAM']['Config']:
-            saddr @network['IPAM']['Config'][0]['Subnet'] outerface ! br-@network['Id'][:12] MASQUERADE;
+            saddr @network['IPAM']['Config'][0]['Subnet'] outerface ! @bridgename MASQUERADE;
             @end
             @end
         }
@@ -31,24 +36,26 @@ domain ip {
         chain FORWARD {
             jump DOCKER-ISOLATION;
 
-            outerface @interface {
-                jump DOCKER;
-                mod conntrack ctstate (RELATED ESTABLISHED) ACCEPT;
-            }
-            interface @interface {
-                outerface ! @interface ACCEPT;
-                outerface @interface ACCEPT;
-            }
             @for network in networks:
             @(
-            bridgename = "br-" + network['Id'][:12]
+               bridgename = "br-" + network['Id'][:12]
+               icc = False
+               if network['Options']:
+                  if network['Options']["com.docker.network.bridge.name"]:
+                     bridgename =  network['Options']['com.docker.network.bridge.name']
+                  if network['Options']['com.docker.network.bridge.enable_icc'] == 'true':
+                     icc = True
+               
             )
             outerface @bridgename {
-                jump DOCKER;
                 mod conntrack ctstate (RELATED ESTABLISHED) ACCEPT;
+                jump DOCKER;
             }
             interface @bridgename {
                 outerface ! @bridgename ACCEPT;
+                @if icc:
+                outerface @bridgename ACCEPT;
+                @end
             }
             @end
         }
@@ -62,13 +69,20 @@ domain ip {
     # @container['Name'] @container['Id']
     @(
         #ip_address = container['NetworkSettings']['IPAddress']
-	networks = container['NetworkSettings']['Networks'].keys()
-        first_network = list(networks)[0]
+	network_keys = container['NetworkSettings']['Networks'].keys()
+        first_network = list(network_keys)[0]
         # TODO: Loop over each network instad just using the first network!
         ip_address = container['NetworkSettings']['Networks'][first_network]['IPAddress']
         port_bindings = container['HostConfig']['PortBindings']
-        bridgename = "br-" + container['NetworkSettings']['Networks'][first_network]['NetworkID'][:12]
-        
+        network_id = container['NetworkSettings']['Networks'][first_network]['NetworkID']
+
+        bridgename = "br-" + network_id[:12]
+        for network in networks:
+            if network['Id'] == network_id:
+                if network['Options']:
+                     if network['Options']['com.docker.network.bridge.name']:
+                           bridgename =  network['Options']['com.docker.network.bridge.name']
+ 
 
         # group into proto:port:(host:port)
         bindings = {}
