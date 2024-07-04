@@ -39,12 +39,12 @@ domain ip {
             @for network in networks:
             @(
                bridgename = "br-" + network['Id'][:12]
-               icc = False
+               icc = True
                if network['Options']:
                   if network['Options']["com.docker.network.bridge.name"]:
                      bridgename =  network['Options']['com.docker.network.bridge.name']
-                  if network['Options']['com.docker.network.bridge.enable_icc'] == 'true':
-                     icc = True
+                  if network['Options']['com.docker.network.bridge.enable_icc'] == 'false':
+                     icc = False
                
             )
             outerface @bridgename {
