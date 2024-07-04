@@ -125,7 +125,7 @@ domain ip {
         chain DOCKER {
             @for proto, ports in bindings.items():
             daddr @ip_address/32 interface ! @bridgename outerface @bridgename protocol @proto {
-            @for port, binds in ports.iteritems():
+            @for port, binds in ports.items():
                 dport @port ACCEPT;
             @end
             }
